@@ -63,4 +63,4 @@ Then delete this folder and remove the plugin in Figma under **Plugins → Devel
 
 ## Credits and license
 
-The MCP server (installed from npm) and the Figma plugin in `plugin/` are [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge), © GETHOPP LTD, under the MIT License (see `plugin/LICENSE.md`). The plugin files are unmodified copies of the 0.0.24 release. This repository adds the pinned install, the `harden.mjs` security patch and this documentation.
+The MCP server (installed from npm) and the Figma plugin in `plugin/` are [gethopp/figma-mcp-bridge](https://github.com/gethopp/figma-mcp-bridge), © GETHOPP LTD, under the MIT License (see `plugin/LICENSE.md`). The plugin files are unmodified copies of the 0.0.24 release. This repository adds the pinned install, the `harden.mjs` security patch and this documentation, which are © kiritoshiro and also MIT-licensed (see `LICENSE`). Anyone may use, change and share them.

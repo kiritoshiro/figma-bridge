@@ -1,6 +1,7 @@
 {
   "name": "figma-mcp-bridge-local",
   "private": true,
+  "license": "MIT",
   "description": "Pinned local install of @gethopp/figma-mcp-bridge with a loopback-only hardening patch (see README.md).",
   "dependencies": {
     "@gethopp/figma-mcp-bridge": "0.0.24"
