@@ -1,0 +1,10 @@
+# Dependencies (install with `npm install --ignore-scripts && npm run harden`)
+node_modules/
+
+# Local files that must never be committed
+.env
+.env.*
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
