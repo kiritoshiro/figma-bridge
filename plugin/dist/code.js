@@ -2943,21 +2943,23 @@
           const resolved = checked.map((r, i) => {
             let family = r.fontFamily;
             if (family === void 0) {
-              const current = text.getRangeFontName(r.start, r.end);
-              if (current === figma.mixed) {
+              // getRangeFontName is mixed when only the style varies, so compare families.
+              const families = new Set(text.getRangeAllFontNames(r.start, r.end).map((f) => f.family));
+              if (families.size !== 1) {
                 throw new Error(`ranges[${i}] spans several font families; pass fontFamily`);
               }
-              family = current.family;
+              family = [...families][0];
             }
             return { ...r, font: { family, style: r.fontStyle } };
           });
+          const before = text.characters;
           // Load everything before the first change, so a missing font changes nothing.
           await loadFontsForTextNode(text);
           const uniqueFonts = new Map(resolved.map((r) => [`${r.font.family}::${r.font.style}`, r.font]));
           await Promise.all([...uniqueFonts.values()].map((font) => figma.loadFontAsync(font)));
           // Requests run concurrently, so the text may have changed during the awaits above.
           // Re-check right before the synchronous write loop, which can't be interrupted.
-          if (text.characters.length !== length || (params.expectText !== void 0 && params.expectText !== text.characters)) {
+          if (text.characters !== before) {
             throw new Error("the node's text changed while fonts were loading; nothing changed");
           }
           for (const r of resolved) {
