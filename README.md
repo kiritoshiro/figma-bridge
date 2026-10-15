@@ -44,6 +44,30 @@ npm install --ignore-scripts && npm run harden
 
 If upstream changes the code the patch relies on, the script refuses to apply and exits with an error. In that case, review the new `leader.js` before using that version.
 
+## Local extensions
+
+`plugin/dist/code.js` carries two plugin handlers that upstream doesn't have, marked
+`/* local-extension: text-ranges v1 */`. They exist so a translated text can keep bold words
+*inside* one text layer, like the original design, instead of separate bold layers stacked on top.
+
+- `set_text_ranges`: one TEXT node id; `params.ranges` = 1–500 items of
+  `{start, end, fontStyle, fontFamily?}` (character offsets, `end` exclusive; the family defaults
+  to the range's current one). Optional `params.expectText` must equal the node's current
+  characters, or nothing changes. It changes only the font of those ranges. All fonts load before
+  the first change. Returns the node's font segments afterwards.
+- `get_text_segments`: read-only; returns the node's style runs (`start`, `end`, `fontFamily`,
+  `fontStyle`, `fontSize`).
+
+The server has no schema for these names. The leader's `validateRpc` lets unknown tools through
+and forwards them unchanged, so the handlers validate every input themselves. They are reachable
+over the loopback `/rpc` endpoint (`{"tool": "set_text_ranges", "nodeIds": [...], "params": {...}}`);
+they are not registered as MCP tools. After changing `code.js`, re-run the plugin in Figma
+(Plugins → Development → Figma MCP Bridge) so it loads the new code. The `unsaved-…` fileKey
+changes with that.
+
+When upgrading the plugin from an upstream release zip, re-apply this block (or drop it if
+upstream gains range styling).
+
 ## Upgrading
 
 1. Change the version in `package.json`, then run `npm install --ignore-scripts`.

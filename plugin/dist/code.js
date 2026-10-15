@@ -2880,6 +2880,84 @@
             }
           };
         }
+        /* local-extension: text-ranges v1 (not upstream; see README "Local extensions") */
+        case "get_text_segments": {
+          const nodeId = request.nodeIds && request.nodeIds[0];
+          if (!nodeId) {
+            throw new Error("nodeIds is required for get_text_segments");
+          }
+          const target = await getTextTargetById(nodeId, "get_text_segments");
+          const text = target.text;
+          const segments = text.characters.length === 0 ? [] : text.getStyledTextSegments(["fontName", "fontSize"]).map((s) => ({
+            start: s.start,
+            end: s.end,
+            fontFamily: s.fontName.family,
+            fontStyle: s.fontName.style,
+            fontSize: s.fontSize
+          }));
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: { nodeId: target.node.id, length: text.characters.length, segments }
+          };
+        }
+        case "set_text_ranges": {
+          // The leader forwards tools it has no schema for without validation, so every
+          // input is checked here. Only the font family/style of character ranges changes:
+          // characters, size, fills, position and dimensions are left as they are.
+          const nodeId = request.nodeIds && request.nodeIds[0];
+          if (!nodeId || (request.nodeIds && request.nodeIds.length !== 1)) {
+            throw new Error("set_text_ranges takes exactly one node id");
+          }
+          const params = request.params ?? {};
+          const ranges = params.ranges;
+          if (!Array.isArray(ranges) || ranges.length < 1 || ranges.length > 500) {
+            throw new Error("ranges must be an array of 1-500 items");
+          }
+          const target = await getTextTargetById(nodeId, "set_text_ranges");
+          const text = target.text;
+          const length = text.characters.length;
+          if (params.expectText !== void 0 && params.expectText !== text.characters) {
+            throw new Error("expectText does not match the node's current characters; nothing changed");
+          }
+          const checked = ranges.map((r, i) => {
+            if (!r || typeof r !== "object") {
+              throw new Error(`ranges[${i}] must be an object`);
+            }
+            const { start, end, fontFamily, fontStyle } = r;
+            if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > length || start >= end) {
+              throw new Error(`ranges[${i}]: need integers 0 <= start < end <= ${length}`);
+            }
+            if (typeof fontStyle !== "string" || fontStyle.length === 0 || fontStyle.length > 64) {
+              throw new Error(`ranges[${i}]: fontStyle is required`);
+            }
+            if (fontFamily !== void 0 && (typeof fontFamily !== "string" || fontFamily.length === 0 || fontFamily.length > 128)) {
+              throw new Error(`ranges[${i}]: fontFamily must be a non-empty string`);
+            }
+            return { start, end, fontFamily, fontStyle };
+          });
+          // Load everything before the first change, so a missing font changes nothing.
+          await loadFontsForTextNode(text);
+          const resolved = [];
+          for (const r of checked) {
+            const family = r.fontFamily ?? text.getRangeFontName(r.start, r.start + 1).family;
+            resolved.push({ ...r, font: await ensureFont(family, r.fontStyle) });
+          }
+          for (const r of resolved) {
+            text.setRangeFontName(r.start, r.end, r.font);
+          }
+          const segments = text.getStyledTextSegments(["fontName"]).map((s) => ({
+            start: s.start,
+            end: s.end,
+            fontFamily: s.fontName.family,
+            fontStyle: s.fontName.style
+          }));
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: { nodeId: target.node.id, applied: resolved.length, segments }
+          };
+        }
         default:
           throw new Error(`Unknown request type: ${request.type}`);
       }
