@@ -50,11 +50,14 @@ If upstream changes the code the patch relies on, the script refuses to apply an
 `/* local-extension: text-ranges v1 */`. They exist so a translated text can keep bold words
 *inside* one text layer, like the original design, instead of separate bold layers stacked on top.
 
-- `set_text_ranges`: one TEXT node id; `params.ranges` = 1–500 items of
-  `{start, end, fontStyle, fontFamily?}` (character offsets, `end` exclusive; the family defaults
-  to the range's current one). Optional `params.expectText` must equal the node's current
-  characters, or nothing changes. It changes only the font of those ranges. All fonts load before
-  the first change. Returns the node's font segments afterwards.
+- `set_text_ranges`: one TEXT, STICKY or SHAPE_WITH_TEXT node id (the latter two use their text
+  sublayer); `params.ranges` = 1–500 items of `{start, end, fontStyle, fontFamily?}`. Offsets are
+  UTF-16 code units (like `characters.length`), `end` exclusive. Without `fontFamily`, the range
+  keeps its current family, and a range spanning several families is refused. Optional
+  `params.expectText` must equal the node's current characters, or nothing changes. Only `fontName`
+  of those ranges is set; an auto-resizing node may still change size as the text reflows. All
+  fonts load and the text is re-checked before the first change, so a failure changes nothing.
+  Returns the node's font segments afterwards. Refused in Dev Mode like the other edit tools.
 - `get_text_segments`: read-only; returns the node's style runs (`start`, `end`, `fontFamily`,
   `fontStyle`, `fontSize`).
 

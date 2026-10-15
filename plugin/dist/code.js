@@ -916,6 +916,8 @@
     "set_node_visibility",
     "set_text_content",
     "set_text_properties",
+    "set_text_ranges",
+    /* ^ local-extension: text-ranges v1 */
     "set_node_properties",
     "set_solid_fill",
     "set_gradient_fill",
@@ -2903,8 +2905,9 @@
         }
         case "set_text_ranges": {
           // The leader forwards tools it has no schema for without validation, so every
-          // input is checked here. Only the font family/style of character ranges changes:
-          // characters, size, fills, position and dimensions are left as they are.
+          // input is checked here. Only fontName of the given ranges is set; no other property
+          // is written (auto-resizing nodes may still change size as the text reflows).
+          // Offsets are UTF-16 code units, like `characters.length`; `end` is exclusive.
           const nodeId = request.nodeIds && request.nodeIds[0];
           if (!nodeId || (request.nodeIds && request.nodeIds.length !== 1)) {
             throw new Error("set_text_ranges takes exactly one node id");
@@ -2936,12 +2939,26 @@
             }
             return { start, end, fontFamily, fontStyle };
           });
+          // Without fontFamily, a range keeps its family, so it must have exactly one.
+          const resolved = checked.map((r, i) => {
+            let family = r.fontFamily;
+            if (family === void 0) {
+              const current = text.getRangeFontName(r.start, r.end);
+              if (current === figma.mixed) {
+                throw new Error(`ranges[${i}] spans several font families; pass fontFamily`);
+              }
+              family = current.family;
+            }
+            return { ...r, font: { family, style: r.fontStyle } };
+          });
           // Load everything before the first change, so a missing font changes nothing.
           await loadFontsForTextNode(text);
-          const resolved = [];
-          for (const r of checked) {
-            const family = r.fontFamily ?? text.getRangeFontName(r.start, r.start + 1).family;
-            resolved.push({ ...r, font: await ensureFont(family, r.fontStyle) });
+          const uniqueFonts = new Map(resolved.map((r) => [`${r.font.family}::${r.font.style}`, r.font]));
+          await Promise.all([...uniqueFonts.values()].map((font) => figma.loadFontAsync(font)));
+          // Requests run concurrently, so the text may have changed during the awaits above.
+          // Re-check right before the synchronous write loop, which can't be interrupted.
+          if (text.characters.length !== length || (params.expectText !== void 0 && params.expectText !== text.characters)) {
+            throw new Error("the node's text changed while fonts were loading; nothing changed");
           }
           for (const r of resolved) {
             text.setRangeFontName(r.start, r.end, r.font);
