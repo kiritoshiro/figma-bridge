@@ -44,6 +44,33 @@ npm install --ignore-scripts && npm run harden
 
 If upstream changes the code the patch relies on, the script refuses to apply and exits with an error. In that case, review the new `leader.js` before using that version.
 
+## Local extensions
+
+`plugin/dist/code.js` carries two plugin handlers that upstream doesn't have, marked
+`/* local-extension: text-ranges v1 */`. They exist so a translated text can keep bold words
+*inside* one text layer, like the original design, instead of separate bold layers stacked on top.
+
+- `set_text_ranges`: one TEXT, STICKY or SHAPE_WITH_TEXT node id (the latter two use their text
+  sublayer); `params.ranges` = 1–500 items of `{start, end, fontStyle, fontFamily?}`. Offsets are
+  UTF-16 code units (like `characters.length`), `end` exclusive. Without `fontFamily`, the range
+  keeps its current family, and a range spanning several families is refused. Optional
+  `params.expectText` must equal the node's current characters, or nothing changes. Only `fontName`
+  of those ranges is set; an auto-resizing node may still change size as the text reflows. All
+  fonts load and the text is re-checked before the first change, so a failure changes nothing.
+  Returns the node's font segments afterwards. Refused in Dev Mode like the other edit tools.
+- `get_text_segments`: read-only; returns the node's style runs (`start`, `end`, `fontFamily`,
+  `fontStyle`, `fontSize`).
+
+The server has no schema for these names. The leader's `validateRpc` lets unknown tools through
+and forwards them unchanged, so the handlers validate every input themselves. They are reachable
+over the loopback `/rpc` endpoint (`{"tool": "set_text_ranges", "nodeIds": [...], "params": {...}}`);
+they are not registered as MCP tools. After changing `code.js`, re-run the plugin in Figma
+(Plugins → Development → Figma MCP Bridge) so it loads the new code. The `unsaved-…` fileKey
+changes with that.
+
+When upgrading the plugin from an upstream release zip, re-apply this block (or drop it if
+upstream gains range styling).
+
 ## Upgrading
 
 1. Change the version in `package.json`, then run `npm install --ignore-scripts`.

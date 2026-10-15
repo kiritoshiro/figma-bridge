@@ -916,6 +916,8 @@
     "set_node_visibility",
     "set_text_content",
     "set_text_properties",
+    "set_text_ranges",
+    /* ^ local-extension: text-ranges v1 */
     "set_node_properties",
     "set_solid_fill",
     "set_gradient_fill",
@@ -2878,6 +2880,101 @@
               nodeId: node.id,
               timelines: node.timelines
             }
+          };
+        }
+        /* local-extension: text-ranges v1 (not upstream; see README "Local extensions") */
+        case "get_text_segments": {
+          const nodeId = request.nodeIds && request.nodeIds[0];
+          if (!nodeId) {
+            throw new Error("nodeIds is required for get_text_segments");
+          }
+          const target = await getTextTargetById(nodeId, "get_text_segments");
+          const text = target.text;
+          const segments = text.characters.length === 0 ? [] : text.getStyledTextSegments(["fontName", "fontSize"]).map((s) => ({
+            start: s.start,
+            end: s.end,
+            fontFamily: s.fontName.family,
+            fontStyle: s.fontName.style,
+            fontSize: s.fontSize
+          }));
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: { nodeId: target.node.id, length: text.characters.length, segments }
+          };
+        }
+        case "set_text_ranges": {
+          // The leader forwards tools it has no schema for without validation, so every
+          // input is checked here. Only fontName of the given ranges is set; no other property
+          // is written (auto-resizing nodes may still change size as the text reflows).
+          // Offsets are UTF-16 code units, like `characters.length`; `end` is exclusive.
+          const nodeId = request.nodeIds && request.nodeIds[0];
+          if (!nodeId || (request.nodeIds && request.nodeIds.length !== 1)) {
+            throw new Error("set_text_ranges takes exactly one node id");
+          }
+          const params = request.params ?? {};
+          const ranges = params.ranges;
+          if (!Array.isArray(ranges) || ranges.length < 1 || ranges.length > 500) {
+            throw new Error("ranges must be an array of 1-500 items");
+          }
+          const target = await getTextTargetById(nodeId, "set_text_ranges");
+          const text = target.text;
+          const length = text.characters.length;
+          if (params.expectText !== void 0 && params.expectText !== text.characters) {
+            throw new Error("expectText does not match the node's current characters; nothing changed");
+          }
+          const checked = ranges.map((r, i) => {
+            if (!r || typeof r !== "object") {
+              throw new Error(`ranges[${i}] must be an object`);
+            }
+            const { start, end, fontFamily, fontStyle } = r;
+            if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > length || start >= end) {
+              throw new Error(`ranges[${i}]: need integers 0 <= start < end <= ${length}`);
+            }
+            if (typeof fontStyle !== "string" || fontStyle.length === 0 || fontStyle.length > 64) {
+              throw new Error(`ranges[${i}]: fontStyle is required`);
+            }
+            if (fontFamily !== void 0 && (typeof fontFamily !== "string" || fontFamily.length === 0 || fontFamily.length > 128)) {
+              throw new Error(`ranges[${i}]: fontFamily must be a non-empty string`);
+            }
+            return { start, end, fontFamily, fontStyle };
+          });
+          // Without fontFamily, a range keeps its family, so it must have exactly one.
+          const resolved = checked.map((r, i) => {
+            let family = r.fontFamily;
+            if (family === void 0) {
+              // getRangeFontName is mixed when only the style varies, so compare families.
+              const families = new Set(text.getRangeAllFontNames(r.start, r.end).map((f) => f.family));
+              if (families.size !== 1) {
+                throw new Error(`ranges[${i}] spans several font families; pass fontFamily`);
+              }
+              family = [...families][0];
+            }
+            return { ...r, font: { family, style: r.fontStyle } };
+          });
+          const before = text.characters;
+          // Load everything before the first change, so a missing font changes nothing.
+          await loadFontsForTextNode(text);
+          const uniqueFonts = new Map(resolved.map((r) => [`${r.font.family}::${r.font.style}`, r.font]));
+          await Promise.all([...uniqueFonts.values()].map((font) => figma.loadFontAsync(font)));
+          // Requests run concurrently, so the text may have changed during the awaits above.
+          // Re-check right before the synchronous write loop, which can't be interrupted.
+          if (text.characters !== before) {
+            throw new Error("the node's text changed while fonts were loading; nothing changed");
+          }
+          for (const r of resolved) {
+            text.setRangeFontName(r.start, r.end, r.font);
+          }
+          const segments = text.getStyledTextSegments(["fontName"]).map((s) => ({
+            start: s.start,
+            end: s.end,
+            fontFamily: s.fontName.family,
+            fontStyle: s.fontName.style
+          }));
+          return {
+            type: request.type,
+            requestId: request.requestId,
+            data: { nodeId: target.node.id, applied: resolved.length, segments }
           };
         }
         default:
